@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Fear & Greed Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg:#070b12;--surface:#101827;--surface-2:#182236;--line:#243149;--text:#eef4ff;--muted:#94a3b8;--up:#22c55e;--down:#ef4444;--brand:#60a5fa; }
+    *{box-sizing:border-box} body{margin:0;font-family:Inter,sans-serif;background:radial-gradient(1200px 500px at 50% -20%,#16315955,transparent),var(--bg);color:var(--text)}
+    .wrap{max-width:1080px;margin:0 auto;padding:16px}
+    .ad-zone{border:1px dashed #334155;background:#0b1322;border-radius:10px;overflow:hidden;display:flex;justify-content:center;align-items:center}
+    .ad-header,.ad-footer{min-height:90px;max-width:728px;margin:12px auto}
+    .desktop-only:empty{display:none}
+    @media (max-width:767px){.desktop-only{display:none!important}}
+    .top{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;background:linear-gradient(180deg,#111a2c,#0e1627);border:1px solid var(--line);padding:18px;border-radius:14px;margin:12px 0 18px}
+    h1{margin:0;font-size:1.6rem} .sub{margin:6px 0 0;color:var(--muted)}
+    .meta{font-family:"JetBrains Mono",monospace;color:var(--muted);font-size:.85rem;text-align:right}
+    .state{display:none;min-height:220px;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:20px}
+    .state.active{display:flex}
+    .grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;width:100%}
+    .card{background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--line);border-radius:14px;padding:16px}
+    .label{color:var(--muted);font-size:.82rem;text-transform:uppercase;letter-spacing:.08em}
+    .value{font-family:"JetBrains Mono",monospace;font-size:3rem;font-weight:700;line-height:1.1;margin:8px 0}
+    .chip{display:inline-block;padding:5px 10px;border-radius:999px;background:#1f2937;color:#dbeafe;font-weight:700;font-size:.8rem}
+    .trend.up{color:var(--up)} .trend.down{color:var(--down)} .trend.flat{color:var(--muted)}
+    .controls{margin-top:10px;display:flex;gap:10px;align-items:center;justify-content:flex-end}
+    .controls select,.controls button{background:#0d1524;color:#e5edff;border:1px solid var(--line);padding:8px 10px;border-radius:9px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}.meta{text-align:left}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="ad-zone ad-header desktop-only" aria-label="Advertisement 728 by 90"><script> atOptions = { "key" : "c737b344d9f052501769bc4e4755b6e5", "format" : "iframe", "height" : 90, "width" : 728, "params" : {} }; </script><script data-cfasync="false" src="https://www.highperformanceformat.com/c737b344d9f052501769bc4e4755b6e5/invoke.js"></script></div>
+
+    <header class="top">
+      <div><h1>Crypto Fear & Greed</h1><p class="sub">Live sentiment index with trend and cached fallback.</p></div>
+      <div class="meta">Last updated: <span id="lastUpdated">--</span><br/>Status: <span id="status">Connecting…</span></div>
+    </header>
+
+    <div class="controls">
+      <label><input id="autoRefresh" type="checkbox" checked /> Auto-refresh</label>
+      <select id="refreshMs"><option value="15000">15s</option><option value="30000" selected>30s</option><option value="60000">60s</option></select>
+      <button id="refreshBtn">Refresh now</button>
+    </div>
+
+    <section id="loading" class="state active">Loading live data…</section>
+    <section id="error" class="state">Couldn’t fetch live data. Showing cache if available.</section>
+    <section id="data" class="state"><div class="grid">
+      <article class="card"><div class="label">Fear & Greed Index</div><div class="value" id="primaryValue">--</div><div id="primaryTrend" class="trend flat">No trend</div></article>
+      <article class="card"><div class="label">Classification</div><div style="margin-top:10px"><span id="classification" class="chip">--</span></div></article>
+      <article class="card"><div class="label">Source timestamp</div><div id="sourceTs" style="margin-top:10px;font-family:JetBrains Mono">--</div></article>
+    </div></section>
+
+    <div class="ad-zone ad-footer desktop-only" aria-label="Advertisement 728 by 90"><script> atOptions = { "key" : "c737b344d9f052501769bc4e4755b6e5", "format" : "iframe", "height" : 90, "width" : 728, "params" : {} }; </script><script data-cfasync="false" src="https://www.highperformanceformat.com/c737b344d9f052501769bc4e4755b6e5/invoke.js"></script></div>
+  </div>
+
+  <script>
+    const API_URL='https://api.alternative.me/fng/?limit=1', CACHE_KEY='crypto_fng_cache';
+    const el={loading:loading,error:error,data:data,last:lastUpdated,status:status,val:primaryValue,trend:primaryTrend,cls:classification,src:sourceTs,auto:autoRefresh,ms:refreshMs,btn:refreshBtn};
+    let timer=null;
+    const show=s=>['loading','error','data'].forEach(k=>el[k].classList.toggle('active',k===s));
+    const setTs=(d=new Date())=>el.last.textContent=d.toLocaleString();
+    const setTrend=(curr,prev)=>{const diff=(curr??0)-(prev??curr??0); el.trend.className='trend '+(diff>0?'up':diff<0?'down':'flat'); el.trend.textContent=diff>0?`▲ +${diff}`:diff<0?`▼ ${Math.abs(diff)}`:'▶ 0'};
+    const cacheGet=()=>{try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'null')}catch{return null}};
+    const cacheSet=(obj)=>localStorage.setItem(CACHE_KEY,JSON.stringify(obj));
+    async function fetchAndRender(){
+      show('loading');
+      try{ const res=await fetch(API_URL,{cache:'no-store'}); if(!res.ok) throw new Error('HTTP '+res.status); const json=await res.json(); render(json,false); cacheSet({ts:Date.now(),data:json}); el.status.textContent='Live'; }
+      catch(e){ const c=cacheGet(); if(c){ render(c.data,true); el.status.textContent='Offline (cached)'; show('data'); } else { show('error'); el.status.textContent='Error'; }}
+      setTs(); schedule();
+    }
+    function schedule(){ if(timer) clearInterval(timer); if(el.auto.checked) timer=setInterval(fetchAndRender,Number(el.ms.value)); }
+    function render(json){
+      const d=(json&&json.data&&json.data[0])?json.data[0]:null; if(!d){show('error');return;}
+      const curr=Number(d.value); const prev=Number(cacheGet()?.data?.data?.[0]?.value ?? curr);
+      el.val.textContent=String(curr);
+      el.cls.textContent=d.value_classification||'Unknown';
+      el.src.textContent=new Date(Number(d.timestamp)*1000).toLocaleString();
+      setTrend(curr,prev); show('data');
+    }
+    el.btn.addEventListener('click',fetchAndRender); el.auto.addEventListener('change',schedule); el.ms.addEventListener('change',schedule);
+    fetchAndRender();
+  </script>
+</body>
+</html>
